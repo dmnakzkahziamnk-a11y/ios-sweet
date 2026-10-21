@@ -1,0 +1,14 @@
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -70,6 +70,11 @@
+ static uintptr_t
+ find_gicr_pe_base(uint32_t core)
+ {
++#if defined(SWEET)
++	// Hardcode MSM8998 (Snapdragon 835) GICR base
++	return 0x17A60000 + (core * 0x20000);
++#endif
++
+ 	if (gicr_pe_base) {
+ 		return gicr_pe_base;
+ 	}
