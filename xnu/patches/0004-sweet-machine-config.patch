@@ -316,3 +316,16 @@ index 9454534..88e524a 100644
  #ifdef ARM64_BOARD_CONFIG_VMAPPLE
  #include <pexpert/arm64/VMAPPLE.h>
  
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -70,6 +70,10 @@
+ find_gicr_pe_base(uint32_t core)
+ {
++#if defined(SWEET)
++    return 0x17A60000 + (core * 0x20000);
++#endif
++
+ 	if (gicr_pe_base) {
+ 		return gicr_pe_base;
+ 	}
+  
