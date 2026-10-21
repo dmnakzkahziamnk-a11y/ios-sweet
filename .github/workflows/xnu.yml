@@ -31,6 +31,7 @@ env:
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
   MACHINE_CONFIG: ${{ inputs.machine_config || 'SWEET' }}
+  CFLAGS: "-march=armv8-a"
 
 jobs:
   build:
@@ -48,6 +49,9 @@ jobs:
           
           # Force 16K page size to 4K for Xiaomi Mi 6 (MSM8998)
           grep -rl "ARM64_PAGE_SIZE_16K" dxb/ | xargs sed -i '' 's/ARM64_PAGE_SIZE_16K/ARM64_PAGE_SIZE_4K/g' || true
+          
+          # Force armv8.0 to disable armv8.2 LSE instructions (not supported on SD835)
+          grep -rl "armv8.2-a" dxb/ | xargs sed -i '' 's/armv8.2-a/armv8-a/g' || true
           
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
