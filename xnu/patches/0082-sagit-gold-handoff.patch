@@ -1,84 +1,89 @@
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
-@@ -99,6 +99,38 @@
+@@ -99,6 +99,20 @@
   *	x21 - CPU data pointer
   */
  	.text
 +#if defined(SWEET)
 +/*
-+ * Gold-cluster resumption point (sagit / msm8998).
++ * Gold-cluster entry (sagit / msm8998).
 + *
-+ * PSCI CPU_ON delivers the context id we passed in x3 to the target core in
-+ * x0, which is how the boot args pointer crosses the handoff: registers are
-+ * NOT inherited by a core started through PSCI. Jump straight back into the
-+ * normal reset path, which re-derives everything else from MPIDR.
++ * PSCI CPU_ON delivers the context id in x0, which is how the boot args
++ * pointer crosses the handoff: a core started through PSCI does NOT inherit
++ * the caller's registers. Resume at start_first_cpu, which re-derives
++ * everything else from MPIDR.
 + */
 +	.align	7
 +.Lgold_entry:
-+	msr		DAIFSet, #(DAIFSC_ALL)
-+	/* magenta band at row 1600: "we are running on the Gold cluster" */
-+	MOV64	x1, (0x9d400000 + 1600 * 4320)
-+	MOV64	x2, 0x00ff00ff
-+	mov		x3, #1080
-+	mov		x4, #4320
-+	mov		x5, #32
-+.Lgold_mark_row:
-+	mov		x6, x1
-+	mov		x7, x3
-+.Lgold_mark_pix:
-+	str		w2, [x6], #4
-+	subs	x7, x7, #1
-+	b.ne	.Lgold_mark_pix
-+	add		x1, x1, x4
-+	subs	x5, x5, #1
-+	b.ne	.Lgold_mark_row
-+	dsb		sy
-+	b		EXT(reset_vector)
++	b		EXT(start_first_cpu)
 +#endif /* defined(SWEET) */
 +
  	.align 12
  	.globl EXT(LowResetVectorBase)
  LEXT(LowResetVectorBase)
-@@ -129,6 +161,41 @@
+@@ -459,6 +473,64 @@
  	// Unlock the core for debugging
  	msr		OSLAR_EL1, xzr
  	msr		DAIFSet, #(DAIFSC_ALL)				// Disable all interrupts
++
 +#if defined(SWEET)
 +/*
-+ * sagit / msm8998: XNU needs the 16K translation granule. MSM8998 has two
-+ * clusters, CPU0-3 Kryo 280 Silver (Cortex-A53 class, TGran16 == 0) and
-+ * CPU4-7 Kryo 280 Gold (Cortex-A73 class, TGran16 == 1). ABL starts the
-+ * kernel on a Silver core, so enabling the MMU with TG1 = 16K faults there.
++ * sagit / msm8998: XNU needs the 16K translation granule.
 + *
-+ * Wake Gold CPU 0x100 through PSCI CPU_ON and park this core. The boot args
-+ * pointer travels as the context id (x3 -> x0 on the target). Nothing has
-+ * been loaded yet and the MMU is still off, so this is a plain physical jump.
++ * MSM8998 is two clusters of four: cpu0-3 Kryo 280 Silver (Cortex-A53 class)
++ * and cpu4-7 Kryo 280 Gold (Cortex-A73 class). The Silver cluster does not
++ * implement TGran16 (ID_AA64MMFR0_EL1.TGran16 == 1 means "not implemented"),
++ * so the MMU faults the instant it is enabled with TG1 = 16K there. ABL
++ * starts us on CPU0, a Silver core.
++ *
++ * Wake Gold CPU 0x100 through PSCI CPU_ON, passing the boot args pointer as
++ * the context id, then park this core. Nothing has been loaded yet and the
++ * MMU is still off, so this is a plain physical jump to .Lgold_entry.
 + */
 +	mrs		x15, MPIDR_EL1
-+	tst		x15, #0x100				// already on Gold?
-+	b.ne		.Lon_gold
++	tst		x15, #0x100				// Gold cluster?
++	b.ne		.Lsagit_on_gold
 +	mrs		x16, ID_AA64MMFR0_EL1
-+	ubfx	x16, x16, #20, #4		// TGran16: 1 means "not implemented"
++	ubfx	x16, x16, #20, #4		// TGran16
 +	cmp		x16, #1
-+	b.ne		.Lon_gold				// Silver has 16K here, nothing to do
++	b.ne		.Lsagit_have_16k		// Silver does implement 16K here
 +
 +	mov		x19, x0					// boot args, for the failure path
 +	mov		x3, x0					// PSCI context id -> Gold's x0
-+	MOV64	x0, 0xC4000003			// PSCI CPU_ON (64-bit calling convention)
++	MOV64	x0, 0xC4000003			// PSCI CPU_ON, 64-bit convention
 +	mov		x1, #0x100				// target: Gold cluster, core 0
 +	adr		x2, .Lgold_entry		// physical entry (MMU off, V != P)
 +	smc		#0
-+	cbnz	x0, .Lgold_failed		// non-zero: PSCI refused, stay on Silver
-+.Lgold_park:
++	cbnz	x0, .Lsagit_psci_failed	// non-zero: PSCI refused
++.Lsagit_park:
 +	wfi
-+	b		.Lgold_park
++	b		.Lsagit_park
 +
-+.Lgold_failed:
-+	mov		x0, x19
++.Lsagit_psci_failed:
++	mov		x0, x19					// fall through on Silver and fail later
 +
-+.Lon_gold:
++.Lsagit_on_gold:
++	/* Magenta band at row 1600: this core is in the Gold cluster. */
++	MOV64	x1, (0x9d400000 + 1600 * 4320)
++	MOV64	x2, 0x00ff00ff
++	mov		x3, #1080
++	mov		x4, #4320
++	mov		x5, #32
++.Lsagit_mark_row:
++	mov		x6, x1
++	mov		x7, x3
++.Lsagit_mark_pix:
++	str		w2, [x6], #4
++	subs	x7, x7, #1
++	b.ne	.Lsagit_mark_pix
++	add		x1, x1, x4
++	subs	x5, x5, #1
++	b.ne	.Lsagit_mark_row
++	dsb		sy
++
++.Lsagit_have_16k:
 +#endif /* defined(SWEET) */
  
- #if !(defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR))
- 	// Set low reset vector before attempting any loads
+ 	mov		x20, x0
+ 	mov		x21, #0
