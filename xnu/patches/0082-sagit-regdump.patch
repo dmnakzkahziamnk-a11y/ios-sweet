@@ -1,7 +1,7 @@
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
-@@ -452,6 +452,75 @@
+@@ -452,6 +452,73 @@
   * Cold boot init routine.  Called from __start
   *   x0 - Boot args
   */
@@ -10,7 +10,7 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 + * sagit bring-up instrumentation.
 + *  SWEET_BAR row, color - paint a 64x32 bar at that framebuffer row.
 + *  SWEET_HEX value, row - dump a 64-bit value as 16 horizontal bars, one per
-+ *                         nibble, MSB first; bar y = row + nibble*40 and its
++ *                         nibble, MSB first; bar y = row + nibble*20 and its
 + *                         grey level is nibble*16, so a screenshot decodes it.
 + * Clobbers x6-x14 only (scratch at every call site below).
 + */
@@ -32,32 +32,30 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 +	dsb	sy
 +.endm
 +
-+/* x12 = value to dump, \row = top bar row. */
++/* x12 = value to dump, \row = top bar row. 16 nibbles, 20 rows apart. */
 +.macro SWEET_HEX row
-+	mov	x14, #0			// nibble index 0..15
++	mov	x14, #0
 +.Lhex_nib_\@:
-+	/* shift = (15 - nibble) * 4 */
 +	mov	x8, #15
 +	sub	x8, x8, x14
 +	lsl	x8, x8, #2
 +	lsr	x13, x12, x8
 +	and	x13, x13, #0xf
-+	lsl	x13, x13, #4		// nibble * 16 -> grey 0..240
++	lsl	x13, x13, #4
 +	orr	x13, x13, #0xff000000
 +	orr	x13, x13, x13, lsl #8
 +	orr	x13, x13, x13, lsl #16
 +
-+	/* bar top row = \row + nibble*40 */
-+	mov	x9, #40
++	mov	x9, #20
 +	madd	x9, x14, x9, xzr
 +	add	x9, x9, #\row
 +	MOV64	x6, 0x9d400000
 +	MOV64	x10, 4320
 +	madd	x6, x9, x10, x6
 +
-+	mov	x8, #32			// 32 rows tall
++	mov	x8, #16
 +.Lhex_row_\@:
-+	mov	x10, #64			// 64 pixels wide
++	mov	x10, #64
 +	mov	x11, x6
 +.Lhex_pix_\@:
 +	str	w13, [x11], #4
@@ -77,61 +75,26 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
  	.align 2
  	.globl EXT(start_first_cpu)
  LEXT(start_first_cpu)
-@@ -494,6 +563,7 @@
- 	ldr		x24, [x20, BA_MEM_SIZE]				// Get the physical memory size
- 	adrp	x25, EXT(bootstrap_pagetables)@page	// Get the start of the page tables
- 	ldr		x26, [x20, BA_BOOT_FLAGS]			// Get the kernel boot flags
-+	SWEET_BAR 1800, 0xffff0000
- 
- 	// Clear the registers that will be used to store the userspace thread pointer and CPU number.
- 	// We may not actually be booting from ordinal CPU 0, so this register will be updated
-@@ -550,6 +620,7 @@
+@@ -550,6 +617,7 @@
  	str		x0, [x1], #(1 << TTE_SHIFT)			//   Invalidate and advance
  	subs	x2, x2, #1							//   entries--
  	b.ne	Linvalidate_bootstrap				// } while (entries != 0)
-+	SWEET_BAR 1750, 0xff00ff00
++	SWEET_BAR 950, 0xff00ff00
  
  	/*
  	 * In order to reclaim memory on targets where TZ0 (or some other entity)
-@@ -623,10 +694,12 @@
- 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
- 	/* create_bootstrap_mapping(vbase, pbase, num_ents, L1 table, freeptr) */
- 	create_bootstrap_mapping x0,  x4,  x5, x1, x2, x6, x10, x11, x12, x13
-+	SWEET_BAR 1700, 0xff0000ff
- 
- 	/* Setup the KVA bootstrap mapping */
- 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
- 	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
-+	SWEET_BAR 1650, 0xffffff00
- 
- #if defined(SWEET)
- 	/*
-@@ -719,6 +792,12 @@
+@@ -719,6 +787,14 @@
  	msr		MAIR_EL1, x0
  	isb
  	tlbi	vmalle1
 +	mrs	x12, tcr_el1
-+	SWEET_HEX 1200
++	SWEET_HEX 80
++	mrs	x12, ttbr1_el1
++	SWEET_HEX 430
 +	mrs	x12, ttbr0_el1
-+	SWEET_HEX 550
++	SWEET_HEX 780
 +	mrs	x12, mair_el1
-+	SWEET_HEX 100
++	SWEET_HEX 1130
  	dsb		ish
  
- 
-@@ -779,6 +858,7 @@
- 	// Enable caches, MMU, ROP and JOP
- 	MOV64   x0, SCTLR_EL1_DEFAULT
- 	MSR_SCTLR_EL1_X0
-+	SWEET_BAR 60, 0xffff8000
- 	isb		sy
- 
- #if !VMAPPLE && !defined(SWEET)
-@@ -843,6 +923,7 @@
- 	mov	lr, x21
- #endif
- 
-+	SWEET_BAR 20, 0xffffffff
- 	// Return to arm_init()
- 	ret
  
