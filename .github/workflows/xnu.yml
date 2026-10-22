@@ -47,8 +47,8 @@ jobs:
           git -C dxb checkout -q FETCH_HEAD
           cp xnu/patches/*.patch xnu/patches/*.sh dxb/patches/
           
-          # Force 16K page size to 4K for Xiaomi Mi 6 (MSM8998)
-          grep -rl "ARM64_PAGE_SIZE_16K" dxb/ | xargs sed -i '' 's/ARM64_PAGE_SIZE_16K/ARM64_PAGE_SIZE_4K/g' || true
+          # sagit: keep 16K pages; 4K trips pmap.c static_assert on
+          # _COMM_PAGE64_BASE_ADDRESS vs MACH_VM_MAX_ADDRESS.
           
           # Force armv8.0 to disable armv8.2 LSE instructions (not supported on SD835)
           grep -rl "armv8.2-a" dxb/ | xargs sed -i '' 's/armv8.2-a/armv8-a/g' || true
