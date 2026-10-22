@@ -1,0 +1,94 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -38,6 +38,34 @@
+ 
+ #if __ARM_KERNEL_PROTECT__
+ #include <arm/pmap.h>
++
++#if defined(SWEET)
++/*
++ * Framebuffer stage ladder, sagit bring-up. Physical addresses, no stack, no
++ * MMU, x8-x13 only (dead at every insertion point).
++ *
++ * MOV64 cannot be used inside another macro: its arguments contain commas,
++ * which clang's integrated assembler treats as macro argument separators, so
++ * the movk sequences are spelled out here instead.
++ */
++.macro SAGIT_BAND row, colour
++	movz	x8, #((0x9d400000 + (\row) * 4320) >> 16), lsl #16
++	movk	x8, #((0x9d400000 + (\row) * 4320) & 0xffff)
++	movz	x9, #((\colour) >> 16), lsl #16
++	movk	x9, #((\colour) & 0xffff)
++	mov		x10, #4320
++	mov		x11, #32
++9:	mov		x12, #1080
++8:	str		w9, [x8], #4
++	subs	x12, x12, #1
++	b.ne	8b
++	add		x8, x8, x10
++	subs	x11, x11, #1
++	b.ne	9b
++	dsb		sy
++.endm
++#endif /* defined(SWEET) */
++
+ #endif /* __ARM_KERNEL_PROTECT__ */
+ 
+ 
+@@ -313,6 +341,11 @@
+ 	adrp	x25, EXT(bootstrap_pagetables)@page	// Get the start of the page tables
+ 	ldr		x26, [x20, BA_BOOT_FLAGS]			// Get the kernel boot flags
+ 
++#if defined(SWEET)
++	SAGIT_BAND 1700, 0x00ff0000	/* 1700 boot args read */
++#endif
++/* band1700 */
++
+ 
+ 	// Set TPIDR_EL0 with the CPU number
+ 	ldrsh	x0, [x21, CPU_NUMBER_GS]
+@@ -524,6 +557,11 @@
+ 	msr		SPSel, #0							// Set SP_EL0 to interrupt stack
+ 	mov		sp, x0
+ 
++#if defined(SWEET)
++	SAGIT_BAND 1710, 0x0000ff00	/* 1710 stacks ready */
++#endif
++/* band1710 */
++
+ 	// Load address to the C init routine into link register
+ 	adrp	lr, EXT(arm_init)@page
+ 	add		lr, lr, EXT(arm_init)@pageoff
+@@ -668,6 +706,11 @@
+  *	TPIDRRO_EL0 - CPU number
+  */
+ common_start:
++
++#if defined(SWEET)
++	SAGIT_BAND 1720, 0x000000ff	/* 1720 about to program TCR */
++#endif
++/* band1720 */
+ 
+ #if HAS_NEX_PG
+ 	mov x19, lr
+@@ -777,9 +820,19 @@
+ #endif /* HAS_APPLE_PAC */
+ 
+ 	// Enable caches, MMU, ROP and JOP
++#if defined(SWEET)
++	SAGIT_BAND 1730, 0x00ffff00	/* 1730 about to enable MMU */
++#endif
++/* band1730 */
++
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
+ 	MSR_SCTLR_EL1_X0
+ 	isb		sy
++
++#if defined(SWEET)
++	SAGIT_BAND 1740, 0x0000ffff	/* 1740 MMU enabled */
++#endif
++/* band1740 */
+ 
+ #if !VMAPPLE && !defined(SWEET)
+ 	MOV64   x1, SCTLR_EL1_DEFAULT
