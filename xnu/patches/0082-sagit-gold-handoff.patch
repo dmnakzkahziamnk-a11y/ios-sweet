@@ -65,7 +65,7 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 +
 +	mov		x19, x0					// boot args, for the failure path
 +	mov		x3, x0					// PSCI context id -> Gold's x0
-+	mov		x0, #0xC4000003			// PSCI CPU_ON (64-bit calling convention)
++	MOV64	x0, 0xC4000003			// PSCI CPU_ON (64-bit calling convention)
 +	mov		x1, #0x100				// target: Gold cluster, core 0
 +	adr		x2, .Lgold_entry		// physical entry (MMU off, V != P)
 +	smc		#0
