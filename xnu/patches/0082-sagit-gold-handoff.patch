@@ -22,7 +22,7 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
  	.align 12
  	.globl EXT(LowResetVectorBase)
  LEXT(LowResetVectorBase)
-@@ -459,6 +473,64 @@
+@@ -459,6 +473,100 @@
  	// Unlock the core for debugging
  	msr		OSLAR_EL1, xzr
  	msr		DAIFSet, #(DAIFSC_ALL)				// Disable all interrupts
@@ -64,9 +64,44 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 +	mov		x0, x19					// fall through on Silver and fail later
 +
 +.Lsagit_on_gold:
-+	/* Magenta band at row 1600: this core is in the Gold cluster. */
++	/*
++	 * Row 1600 magenta: this core is in the Gold cluster, so the PSCI
++	 * handoff worked. The white bar at row 1800 (patch 0010) is drawn
++	 * afterwards on this same path, so "magenta + white" means success
++	 * and "white only" means PSCI refused and we are still on Silver.
++	 */
 +	MOV64	x1, (0x9d400000 + 1600 * 4320)
 +	MOV64	x2, 0x00ff00ff
++	bl		.Lsagit_band
++
++	/*
++	 * Row 1650: which exception level did this core come up in? XNU
++	 * expects EL1. A core started by PSCI normally arrives at EL1
++	 * (that is where Linux runs on this SoC), but ABL may have left the
++	 * boot core at EL2, in which case the two differ.
++	 *
++	 *   green  = EL1 (what XNU wants)
++	 *   cyan   = EL2
++	 *   red    = EL3 or anything else
++	 */
++	mrs		x8, CurrentEL
++	ubfx	x8, x8, #2, #2
++	MOV64	x2, 0x0000ff00
++	cmp		x8, #1
++	b.eq	.Lsagit_el_band
++	MOV64	x2, 0x0000ffff
++	cmp		x8, #2
++	b.eq	.Lsagit_el_band
++	MOV64	x2, 0x00ff0000
++.Lsagit_el_band:
++	MOV64	x1, (0x9d400000 + 1650 * 4320)
++	bl		.Lsagit_band
++
++.Lsagit_have_16k:
++	b		.Lsagit_band_done
++
++/* x1 = row start, x2 = colour. Clobbers x3-x7. */
++.Lsagit_band:
 +	mov		x3, #1080
 +	mov		x4, #4320
 +	mov		x5, #32
@@ -81,8 +116,9 @@ diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 +	subs	x5, x5, #1
 +	b.ne	.Lsagit_mark_row
 +	dsb		sy
++	ret
 +
-+.Lsagit_have_16k:
++.Lsagit_band_done:
 +#endif /* defined(SWEET) */
  
  	mov		x20, x0
