@@ -1,0 +1,67 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -462,6 +462,63 @@
+ 
+ 	mov		x20, x0
+ 	mov		x21, #0
++#if defined(SWEET)
++	/*
++	 * sagit: page-granule probe.
++	 * ID_AA64MMFR0_EL1.TGran16 (bits 23:20) and .TGran4 (bits 31:28)
++	 * report whether the core implements that granule: 0b0000/0b0010 means
++	 * supported, 0b0001 means not supported.
++	 * Top half of the panel shows TGran16, bottom half TGran4:
++	 *   green = supported, red = not supported.
++	 * Runs before any MMU work, then halts so the answer stays on screen.
++	 */
++	mrs		x1, ID_AA64MMFR0_EL1
++	ubfx	x2, x1, #20, #4
++	cmp		x2, #1
++	b.eq	.Lg16_no
++	MOV64	x3, 0xff00c000			// green
++	b		.Lg16_done
++.Lg16_no:
++	MOV64	x3, 0xff0000e0			// red
++.Lg16_done:
++	MOV64	x4, 0x9d400000
++	MOV64	x5, 4320
++	mov		x6, #960			// 960 rows
++.Lg16_row:
++	mov		x7, #1080			// 1080 pixels
++	mov		x8, x4
++.Lg16_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lg16_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lg16_row
++
++	ubfx	x2, x1, #28, #4
++	cmp		x2, #1
++	b.eq	.Lg4_no
++	MOV64	x3, 0xff00c000
++	b		.Lg4_done
++.Lg4_no:
++	MOV64	x3, 0xff0000e0
++.Lg4_done:
++	mov		x6, #960
++.Lg4_row:
++	mov		x7, #1080
++	mov		x8, x4
++.Lg4_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lg4_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lg4_row
++	dsb		sy
++.Lprobe_halt:
++	wfi
++	b		.Lprobe_halt
++#endif
+ 
+ #if defined(SWEET)
+ 	/* Stage 0: white 64x32 band, no stack or page tables needed. */
