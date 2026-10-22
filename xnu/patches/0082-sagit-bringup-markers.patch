@@ -1,0 +1,86 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -452,6 +452,29 @@
+  * Cold boot init routine.  Called from __start
+  *   x0 - Boot args
+  */
++#if defined(SWEET)
++/*
++ * sagit bring-up markers: paint a 64x32 bar into the splash framebuffer.
++ * Only x6-x11 are touched; they are scratch at every call site below.
++ */
++.macro SWEET_STAGE_MARK addr, color
++	MOV64	x6, \addr
++	MOV64	x7, \color
++	mov	x8, #32
++	mov	x9, #4320
++.Lsweet_row_\@:
++	mov	x10, #64
++	mov	x11, x6
++.Lsweet_pix_\@:
++	str	w7, [x11], #4
++	subs	x10, x10, #1
++	b.ne	.Lsweet_pix_\@
++	add	x6, x6, x9
++	subs	x8, x8, #1
++	b.ne	.Lsweet_row_\@
++	dsb	sy
++.endm
++#endif
+ 	.align 2
+ 	.globl EXT(start_first_cpu)
+ LEXT(start_first_cpu)
+@@ -494,6 +517,7 @@
+ 	ldr		x24, [x20, BA_MEM_SIZE]				// Get the physical memory size
+ 	adrp	x25, EXT(bootstrap_pagetables)@page	// Get the start of the page tables
+ 	ldr		x26, [x20, BA_BOOT_FLAGS]			// Get the kernel boot flags
++	SWEET_STAGE_MARK 0x9db00f80, 0xffff0000
+ 
+ 	// Clear the registers that will be used to store the userspace thread pointer and CPU number.
+ 	// We may not actually be booting from ordinal CPU 0, so this register will be updated
+@@ -550,6 +574,7 @@
+ 	str		x0, [x1], #(1 << TTE_SHIFT)			//   Invalidate and advance
+ 	subs	x2, x2, #1							//   entries--
+ 	b.ne	Linvalidate_bootstrap				// } while (entries != 0)
++	SWEET_STAGE_MARK 0x9da97800, 0xff00ff00
+ 
+ 	/*
+ 	 * In order to reclaim memory on targets where TZ0 (or some other entity)
+@@ -623,10 +648,12 @@
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	/* create_bootstrap_mapping(vbase, pbase, num_ents, L1 table, freeptr) */
+ 	create_bootstrap_mapping x0,  x4,  x5, x1, x2, x6, x10, x11, x12, x13
++	SWEET_STAGE_MARK 0x9da2e080, 0xff0000ff
+ 
+ 	/* Setup the KVA bootstrap mapping */
+ 	lsr		x5,  x24, #(ARM_TT_L2_SHIFT)
+ 	create_bootstrap_mapping x14, x15, x5, x3, x2, x9, x10, x11, x12, x13
++	SWEET_STAGE_MARK 0x9d9c4900, 0xffffff00
+ 
+ #if defined(SWEET)
+ 	/*
+@@ -719,6 +746,7 @@
+ 	msr		MAIR_EL1, x0
+ 	isb
+ 	tlbi	vmalle1
++	SWEET_STAGE_MARK 0x9d95b180, 0xffff00ff
+ 	dsb		ish
+ 
+ 
+@@ -779,6 +807,7 @@
+ 	// Enable caches, MMU, ROP and JOP
+ 	MOV64   x0, SCTLR_EL1_DEFAULT
+ 	MSR_SCTLR_EL1_X0
++	SWEET_STAGE_MARK 0x9d8f1a00, 0xff00ffff
+ 	isb		sy
+ 
+ #if !VMAPPLE && !defined(SWEET)
+@@ -843,6 +872,7 @@
+ 	mov	lr, x21
+ #endif
+ 
++	SWEET_STAGE_MARK 0x9d888280, 0xffff8000
+ 	// Return to arm_init()
+ 	ret
+ 
