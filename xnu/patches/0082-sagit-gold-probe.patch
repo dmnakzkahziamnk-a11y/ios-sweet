@@ -1,0 +1,130 @@
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -462,6 +462,126 @@
+ 
+ 	mov		x20, x0
+ 	mov		x21, #0
++#if defined(SWEET)
++/*
++ * sagit: translation-granule probe + Gold-core wake.
++ *
++ * MSM8998 has two clusters: CPU0-3 Kryo 280 Silver (A53 class, MPIDR 0x000)
++ * and CPU4-7 Kryo 280 Gold (A73 class, MPIDR 0x100). ABL boots on CPU0, and
++ * the Silver cores have no 16K granule (ID_AA64MMFR0.TGran16 == 0), which is
++ * why enabling the MMU with TG1=16K kills the kernel.
++ *
++ * Screen is split into three bands, 640 rows each:
++ *   band 0  TGran16 on the CURRENT core     green = supported, red = not
++ *   band 1  TGran4  on the CURRENT core     green = supported, red = not
++ *   band 2  TGran16 on the GOLD core        green/red, blue = wake failed
++ */
++	/* ---- band 0: TGran16 on this core ---- */
++	mrs		x1, ID_AA64MMFR0_EL1
++	ubfx	x2, x1, #20, #4
++	cmp		x2, #1
++	b.eq	.Lsg16_no
++	MOV64	x3, 0xff00c000			// green
++	b		.Lsg16_done
++.Lsg16_no:
++	MOV64	x3, 0xff0000e0			// red
++.Lsg16_done:
++	MOV64	x4, (0x9d400000 + 0 * 4320)
++	MOV64	x5, 4320
++	mov		x6, #640
++.Lsg16_row:
++	mov		x7, #1080
++	mov		x8, x4
++.Lsg16_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lsg16_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lsg16_row
++	dsb		sy
++
++	/* ---- band 1: TGran4 on this core ---- */
++	ubfx	x2, x1, #28, #4
++	cmp		x2, #1
++	b.eq	.Lsg4_no
++	MOV64	x3, 0xff00c000
++	b		.Lsg4_done
++.Lsg4_no:
++	MOV64	x3, 0xff0000e0
++.Lsg4_done:
++	mov		x6, #640
++.Lsg4_row:
++	mov		x7, #1080
++	mov		x8, x4
++.Lsg4_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lsg4_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lsg4_row
++	dsb		sy
++
++	/* ---- band 2: pre-paint blue = "Gold did not report" ---- */
++	MOV64	x3, 0xff0000ff
++	mov		x6, #640
++.Lsgblue_row:
++	mov		x7, #1080
++	mov		x8, x4
++.Lsgblue_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lsgblue_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lsgblue_row
++	dsb		sy
++
++	/* ---- wake Gold CPU 0x100 through PSCI CPU_ON ---- */
++	MOV64	x0, 0xC4000003			// PSCI CPU_ON, 64-bit
++	mov		x1, #0x100			// target MPIDR: Gold cluster, core 0
++	adr		x2, .Lgold_entry		// physical entry (we run V=P)
++	mov		x3, #0
++	smc		#0
++	cbnz	x0, .Lpark			// non-zero = PSCI refused
++	mov		x9, #0x10000000			// give Gold time to paint
++.Lwait:
++	subs	x9, x9, #1
++	b.ne	.Lwait
++.Lpark:
++	wfi
++	b		.Lpark
++
++	/* ---- runs on the Gold core ---- */
++.Lgold_entry:
++	mrs		x1, ID_AA64MMFR0_EL1
++	ubfx	x2, x1, #20, #4
++	cmp		x2, #1
++	b.eq	.Lgg16_no
++	MOV64	x3, 0xff00c000			// green: Gold has 16K
++	b		.Lgg16_done
++.Lgg16_no:
++	MOV64	x3, 0xff0000e0			// red: Gold has no 16K either
++.Lgg16_done:
++	MOV64	x4, (0x9d400000 + 1280 * 4320)
++	MOV64	x5, 4320
++	mov		x6, #640
++.Lgg16_row:
++	mov		x7, #1080
++	mov		x8, x4
++.Lgg16_pix:
++	str		w3, [x8], #4
++	subs	x7, x7, #1
++	b.ne	.Lgg16_pix
++	add		x4, x4, x5
++	subs	x6, x6, #1
++	b.ne	.Lgg16_row
++	dsb		sy
++.Lgold_halt:
++	wfi
++	b		.Lgold_halt
++#endif
+ 
+ #if defined(SWEET)
+ 	/* Stage 0: white 64x32 band, no stack or page tables needed. */
